@@ -1,17 +1,15 @@
 package histfile
 
 import (
-	"fmt"
+	"errors"
 	"math"
 	"os"
 	"strconv"
 	"sync"
 
-	"github.com/curusarn/resh/internal/futil"
 	"github.com/curusarn/resh/internal/histcli"
 	"github.com/curusarn/resh/internal/histdb"
 	"github.com/curusarn/resh/internal/histlist"
-	"github.com/curusarn/resh/internal/recio"
 	"github.com/curusarn/resh/internal/recordint"
 	"github.com/curusarn/resh/internal/records"
 	"github.com/curusarn/resh/internal/recutil"
@@ -81,34 +79,21 @@ func (h *Histfile) loadCliRecords(recs []record.V1) {
 	)
 }
 
-// importJSONLHistory imports the legacy JSON lines history into the database (only once)
+// importJSONLHistory imports the legacy JSON lines history into the database if it was not imported yet
+// install-utils normally does this during installation - this is a fallback
 func (h *Histfile) importJSONLHistory() error {
-	imported, err := h.db.JSONLImported()
-	if err != nil {
-		return err
-	}
-	if imported {
+	sugar := h.sugar.With("historyFile", h.jsonlHistoryPath)
+	res, err := h.db.ImportJSONLFile(sugar, h.jsonlHistoryPath, 3)
+	if errors.Is(err, histdb.ErrAlreadyImported) {
 		return nil
 	}
-	sugar := h.sugar.With("historyFile", h.jsonlHistoryPath)
-	var recs []record.V1
-	exists, err := futil.FileExists(h.jsonlHistoryPath)
-	if err != nil {
-		return fmt.Errorf("failed to check history file: %w", err)
-	}
-	if exists {
-		sugar.Infow("Importing JSON history file into history database ...")
-		rio := recio.New(sugar)
-		recs, err = rio.ReadAndFixFile(h.jsonlHistoryPath, 3)
-		if err != nil {
-			return fmt.Errorf("failed to read history file: %w", err)
-		}
-	}
-	err = h.db.ImportJSONL(recs, h.jsonlHistoryPath)
 	if err != nil {
 		return err
 	}
-	sugar.Infow("JSON history file imported into history database", "recordCount", len(recs))
+	sugar.Infow("JSON history file imported into history database",
+		"recordCount", res.Imported,
+		"droppedCount", res.Dropped,
+	)
 	return nil
 }
 

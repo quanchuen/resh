@@ -11,8 +11,11 @@ import (
 	"fmt"
 	"sync"
 
+	"github.com/curusarn/resh/internal/futil"
+	"github.com/curusarn/resh/internal/recio"
 	"github.com/curusarn/resh/record"
 	"github.com/google/uuid"
+	"go.uber.org/zap"
 
 	// pure Go SQLite driver - keeps the build CGO-free
 	_ "modernc.org/sqlite"
@@ -68,6 +71,9 @@ const (
 
 const metaKeyJSONLImported = "jsonl_imported"
 
+// ErrAlreadyImported is returned when the JSON lines history was already imported into the database
+var ErrAlreadyImported = errors.New("JSON history was already imported")
+
 // DB is a RESH history database
 type DB struct {
 	db *sql.DB
@@ -90,7 +96,10 @@ func Open(path string) (*DB, error) {
 	dsn := "file:" + path +
 		"?_pragma=journal_mode(WAL)" +
 		"&_pragma=synchronous(NORMAL)" +
-		"&_pragma=busy_timeout(5000)"
+		"&_pragma=busy_timeout(5000)" +
+		// take the write lock when a transaction begins so that concurrent processes
+		// (daemon, install-utils) wait for each other instead of failing on lock upgrade
+		"&_txlock=immediate"
 	db, err := sql.Open("sqlite", dsn)
 	if err != nil {
 		return nil, fmt.Errorf("could not open history database: %w", err)
@@ -293,10 +302,18 @@ func (h *DB) Count() (int, error) {
 	return n, nil
 }
 
+type queryRower interface {
+	QueryRow(query string, args ...any) *sql.Row
+}
+
 // JSONLImported reports whether the JSON lines history file was already imported
 func (h *DB) JSONLImported() (bool, error) {
+	return jsonlImported(h.db)
+}
+
+func jsonlImported(q queryRower) (bool, error) {
 	var v string
-	err := h.db.QueryRow("SELECT value FROM meta WHERE key = ?", metaKeyJSONLImported).Scan(&v)
+	err := q.QueryRow("SELECT value FROM meta WHERE key = ?", metaKeyJSONLImported).Scan(&v)
 	if errors.Is(err, sql.ErrNoRows) {
 		return false, nil
 	}
@@ -306,8 +323,59 @@ func (h *DB) JSONLImported() (bool, error) {
 	return true, nil
 }
 
+// ImportResult describes the outcome of ImportJSONLFile
+type ImportResult struct {
+	// Imported is the number of records written to the database
+	Imported int
+	// Dropped is the number of lines which could not be decoded
+	Dropped int
+	// FileFound is false when there was no JSON history file to import
+	FileFound bool
+}
+
+// ImportJSONLFile imports the JSON lines history file at path into the database
+// The file is only read, never modified, so it stays as a backup.
+// A missing file is treated as empty history. Up to maxErrors undecodable lines are dropped.
+// Returns ErrAlreadyImported if the JSON history was imported before.
+func (h *DB) ImportJSONLFile(sugar *zap.SugaredLogger, path string, maxErrors int) (ImportResult, error) {
+	var res ImportResult
+	// avoid reading a potentially large file when there is nothing to do
+	imported, err := h.JSONLImported()
+	if err != nil {
+		return res, err
+	}
+	if imported {
+		return res, ErrAlreadyImported
+	}
+	res.FileFound, err = futil.FileExists(path)
+	if err != nil {
+		return res, fmt.Errorf("could not check history file: %w", err)
+	}
+	var recs []record.V1
+	if res.FileFound {
+		rio := recio.New(sugar)
+		var decodeErrs []error
+		recs, decodeErrs, err = rio.ReadFile(path)
+		if err != nil {
+			return res, fmt.Errorf("could not read history file: %w", err)
+		}
+		res.Dropped = len(decodeErrs)
+		if res.Dropped > maxErrors {
+			return res, fmt.Errorf("history file has too many lines that could not be decoded (%d), last error: %w",
+				res.Dropped, decodeErrs[len(decodeErrs)-1])
+		}
+	}
+	err = h.ImportJSONL(recs, path)
+	if err != nil {
+		return res, err
+	}
+	res.Imported = len(recs)
+	return res, nil
+}
+
 // ImportJSONL inserts records from the JSON lines history and marks the import as done
-// Records and the marker are written in one transaction so the import is never applied twice
+// The check, records and the marker are in one transaction so the import is never applied twice.
+// Returns ErrAlreadyImported if the JSON history was imported before.
 func (h *DB) ImportJSONL(recs []record.V1, source string) error {
 	h.mu.Lock()
 	defer h.mu.Unlock()
@@ -324,6 +392,13 @@ func (h *DB) ImportJSONL(recs []record.V1, source string) error {
 			h.sessIDs = map[sessionKey]int64{}
 		}
 	}()
+	imported, err := jsonlImported(tx)
+	if err != nil {
+		return err
+	}
+	if imported {
+		return ErrAlreadyImported
+	}
 	err = h.insertTx(tx, recs)
 	if err != nil {
 		return err

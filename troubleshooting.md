@@ -42,8 +42,9 @@ sqlite3 ~/.local/share/resh/history.db "
 ℹ️ You will need `sqlite3` installed.
 
 Older versions of RESH saved history in `history.reshjson` (one JSON record per line).
-RESH daemon imports this file into the database once on its first start after the update.
-The file is left in place as a backup and is no longer written to.
+Updating RESH moves this history into the database (`resh-install-utils migrate-all` does it during installation).
+If that did not happen, RESH daemon does it on its next start. History is only moved once.
+The `history.reshjson` file is left unchanged as a backup and is no longer written to.
 You can delete it once you have checked that your history is in the database.
 
 ## Configuration
