@@ -52,7 +52,7 @@ func Run(sugar *zap.SugaredLogger, subscribers []chan os.Signal, done chan strin
 
 	var sig os.Signal
 	for {
-		sig := <-signals
+		sig = <-signals
 		sugarSig := sugar.With("signal", sig.String())
 		sugarSig.Infow("Got signal")
 		if sig == syscall.SIGTERM {

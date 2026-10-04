@@ -1,12 +1,15 @@
 package histfile
 
 import (
+	"fmt"
 	"math"
 	"os"
 	"strconv"
 	"sync"
 
+	"github.com/curusarn/resh/internal/futil"
 	"github.com/curusarn/resh/internal/histcli"
+	"github.com/curusarn/resh/internal/histdb"
 	"github.com/curusarn/resh/internal/histlist"
 	"github.com/curusarn/resh/internal/recio"
 	"github.com/curusarn/resh/internal/recordint"
@@ -23,7 +26,9 @@ type Histfile struct {
 
 	sessionsMutex sync.Mutex
 	sessions      map[string]recordint.Collect
-	historyPath   string
+	// legacy JSON lines history - only read once to import it into the database
+	jsonlHistoryPath string
+	db               *histdb.DB
 
 	// NOTE: we have separate histories which only differ if there was not enough resh_history
 	//			resh_history itself is common for both bash and zsh
@@ -31,27 +36,29 @@ type Histfile struct {
 	zshCmdLines  histlist.Histlist
 
 	cliRecords histcli.Histcli
-
-	rio *recio.RecIO
 }
 
 // New creates new histfile and runs its goroutines
 func New(sugar *zap.SugaredLogger, input chan recordint.Collect, sessionsToDrop chan string,
-	reshHistoryPath string, bashHistoryPath string, zshHistoryPath string,
-	maxInitHistSize int, minInitHistSizeKB int,
+	historyDBPath string, jsonlHistoryPath string, bashHistoryPath string, zshHistoryPath string,
+	maxInitHistSize int, minInitHistSize int,
 	signals chan os.Signal, shutdownDone chan string) *Histfile {
 
-	rio := recio.New(sugar.With("module", "histfile"))
-	hf := Histfile{
-		sugar:        sugar.With("module", "histfile"),
-		sessions:     map[string]recordint.Collect{},
-		historyPath:  reshHistoryPath,
-		bashCmdLines: histlist.New(sugar),
-		zshCmdLines:  histlist.New(sugar),
-		cliRecords:   histcli.New(sugar),
-		rio:          &rio,
+	sugar = sugar.With("module", "histfile")
+	db, err := histdb.Open(historyDBPath)
+	if err != nil {
+		sugar.Fatalw("Failed to open history database", "historyDB", historyDBPath, zap.Error(err))
 	}
-	go hf.loadHistory(bashHistoryPath, zshHistoryPath, maxInitHistSize, minInitHistSizeKB)
+	hf := Histfile{
+		sugar:            sugar,
+		sessions:         map[string]recordint.Collect{},
+		jsonlHistoryPath: jsonlHistoryPath,
+		db:               db,
+		bashCmdLines:     histlist.New(sugar),
+		zshCmdLines:      histlist.New(sugar),
+		cliRecords:       histcli.New(sugar),
+	}
+	go hf.loadHistory(bashHistoryPath, zshHistoryPath, maxInitHistSize, minInitHistSize)
 	go hf.writer(input, signals, shutdownDone)
 	go hf.sessionGC(sessionsToDrop)
 	return &hf
@@ -74,18 +81,50 @@ func (h *Histfile) loadCliRecords(recs []record.V1) {
 	)
 }
 
-// loadsHistory from resh_history and if there is not enough of it also load native shell histories
-func (h *Histfile) loadHistory(bashHistoryPath, zshHistoryPath string, maxInitHistSize, minInitHistSizeKB int) {
-	h.sugar.Infow("Checking if resh_history is large enough ...")
-	fi, err := os.Stat(h.historyPath)
-	var size int
+// importJSONLHistory imports the legacy JSON lines history into the database (only once)
+func (h *Histfile) importJSONLHistory() error {
+	imported, err := h.db.JSONLImported()
 	if err != nil {
-		h.sugar.Errorw("Failed to stat resh_history file", "error", err)
-	} else {
-		size = int(fi.Size())
+		return err
+	}
+	if imported {
+		return nil
+	}
+	sugar := h.sugar.With("historyFile", h.jsonlHistoryPath)
+	var recs []record.V1
+	exists, err := futil.FileExists(h.jsonlHistoryPath)
+	if err != nil {
+		return fmt.Errorf("failed to check history file: %w", err)
+	}
+	if exists {
+		sugar.Infow("Importing JSON history file into history database ...")
+		rio := recio.New(sugar)
+		recs, err = rio.ReadAndFixFile(h.jsonlHistoryPath, 3)
+		if err != nil {
+			return fmt.Errorf("failed to read history file: %w", err)
+		}
+	}
+	err = h.db.ImportJSONL(recs, h.jsonlHistoryPath)
+	if err != nil {
+		return err
+	}
+	sugar.Infow("JSON history file imported into history database", "recordCount", len(recs))
+	return nil
+}
+
+// loadsHistory from resh history database and if there is not enough of it also load native shell histories
+func (h *Histfile) loadHistory(bashHistoryPath, zshHistoryPath string, maxInitHistSize, minInitHistSize int) {
+	err := h.importJSONLHistory()
+	if err != nil {
+		h.sugar.Fatalw("Failed to import JSON history file into history database", zap.Error(err))
+	}
+	h.sugar.Infow("Checking if resh history is large enough ...")
+	size, err := h.db.Count()
+	if err != nil {
+		h.sugar.Errorw("Failed to count resh history records", zap.Error(err))
 	}
 	useNativeHistories := false
-	if size/1024 < minInitHistSizeKB {
+	if size < minInitHistSize {
 		useNativeHistories = true
 		h.sugar.Warnw("RESH history is too small - loading native bash and zsh history ...")
 		h.bashCmdLines = records.LoadCmdLinesFromBashFile(h.sugar, bashHistoryPath)
@@ -95,15 +134,12 @@ func (h *Histfile) loadHistory(bashHistoryPath, zshHistoryPath string, maxInitHi
 		// no maxInitHistSize when using native histories
 		maxInitHistSize = math.MaxInt32
 	}
-	h.sugar.Debugw("Loading resh history from file ...",
-		"historyFile", h.historyPath,
-	)
-	history, err := h.rio.ReadAndFixFile(h.historyPath, 3)
+	h.sugar.Debugw("Loading resh history from database ...")
+	history, err := h.db.All()
 	if err != nil {
-		h.sugar.Fatalf("Failed to read history file: %v", err)
+		h.sugar.Fatalw("Failed to read history database", zap.Error(err))
 	}
-	h.sugar.Infow("RESH history loaded from file",
-		"historyFile", h.historyPath,
+	h.sugar.Infow("RESH history loaded from database",
 		"recordCount", len(history),
 	)
 	go h.loadCliRecords(history)
@@ -136,7 +172,7 @@ func (h *Histfile) sessionGC(sessionsToDrop chan string) {
 			if part1, found := h.sessions[session]; found == true {
 				sugar.Infow("Dropping session")
 				delete(h.sessions, session)
-				go h.rio.AppendToFile(h.historyPath, []record.V1{part1.Rec})
+				go h.writeRecord(sugar, part1.Rec)
 			} else {
 				sugar.Infow("No hanging parts for session - nothing to drop")
 			}
@@ -199,6 +235,10 @@ func (h *Histfile) writer(collect chan recordint.Collect, signals chan os.Signal
 					)
 					h.writeRecord(sugar, rec.Rec)
 				}
+				err := h.db.Close()
+				if err != nil {
+					sugar.Errorw("Failed to close history database", zap.Error(err))
+				}
 				sugar.Debugw("Shutdown successful")
 				shutdownDone <- "histfile"
 				return
@@ -208,7 +248,10 @@ func (h *Histfile) writer(collect chan recordint.Collect, signals chan os.Signal
 }
 
 func (h *Histfile) writeRecord(sugar *zap.SugaredLogger, rec record.V1) {
-	h.rio.AppendToFile(h.historyPath, []record.V1{rec})
+	err := h.db.Insert(rec)
+	if err != nil {
+		sugar.Errorw("Failed to write record to history database", zap.Error(err))
+	}
 }
 
 func (h *Histfile) mergeAndWriteRecord(sugar *zap.SugaredLogger, part1 recordint.Collect, part2 recordint.Collect) {
@@ -226,7 +269,7 @@ func (h *Histfile) mergeAndWriteRecord(sugar *zap.SugaredLogger, part1 recordint
 		h.cliRecords.AddRecord(&recV1)
 	}()
 
-	h.rio.AppendToFile(h.historyPath, []record.V1{recV1})
+	h.writeRecord(sugar, recV1)
 }
 
 // TODO: use errors in RecIO

@@ -88,7 +88,20 @@ func migrateConfig(out *output.Output) (*futil.RestorableFile, error) {
 }
 
 func migrateHistory(out *output.Output) error {
-	err := migrateHistoryLocation(out)
+	dataDir, err := datadir.MakePath()
+	if err != nil {
+		return fmt.Errorf("failed to get data directory: %w", err)
+	}
+	dbExists, err := futil.FileExists(path.Join(dataDir, datadir.HistoryDBFileName))
+	if err != nil {
+		return fmt.Errorf("failed to check history database: %w", err)
+	}
+	if dbExists {
+		// JSON history was already imported into the database by the daemon - nothing to migrate
+		return nil
+	}
+	// The daemon imports the JSON history into the history database on its next start
+	err = migrateHistoryLocation(out)
 	if err != nil {
 		return fmt.Errorf("failed to move history to new location %w", err)
 	}

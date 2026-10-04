@@ -24,17 +24,27 @@ resh-daemon-stop
 
 ## Recorded history
 
-Your RESH history is saved in one of:
-- `~/.local/share/resh/history.reshjson`
-- `$XDG_DATA_HOME/resh/history.reshjson`
+Your RESH history is saved in a SQLite database in one of:
+- `~/.local/share/resh/history.db`
+- `$XDG_DATA_HOME/resh/history.db`
 
-Each line is one JSON record prefixed by version. Display it as JSON using:
+Display the most recent commands using:
 
 ```sh
-cat ~/.local/share/resh/history.reshjson | sed 's/^v[^{]*{/{/' | jq .
+sqlite3 ~/.local/share/resh/history.db "
+  SELECT r.time, p.value AS pwd, r.exit_code, c.value AS cmdline
+  FROM records r
+  JOIN strings c ON c.id = r.cmd
+  JOIN strings p ON p.id = r.pwd
+  ORDER BY r.id DESC LIMIT 20"
 ```
 
-ℹ️ You will need `jq` installed.
+ℹ️ You will need `sqlite3` installed.
+
+Older versions of RESH saved history in `history.reshjson` (one JSON record per line).
+RESH daemon imports this file into the database once on its first start after the update.
+The file is left in place as a backup and is no longer written to.
+You can delete it once you have checked that your history is in the database.
 
 ## Configuration
 

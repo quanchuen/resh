@@ -6,8 +6,13 @@ import (
 	"path"
 )
 
-// Maybe there is a better place for this constant
+// Maybe there is a better place for these constants
+
+// HistoryFileName is the legacy JSON lines history - it gets imported into the history database
 const HistoryFileName = "history.reshjson"
+
+// HistoryDBFileName is the SQLite history database
+const HistoryDBFileName = "history.db"
 
 func GetPath() (string, error) {
 	reshDir := "resh"
