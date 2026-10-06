@@ -1,6 +1,7 @@
 package main
 
 import (
+	"errors"
 	"fmt"
 	"os"
 	"path"
@@ -8,8 +9,8 @@ import (
 	"github.com/curusarn/resh/internal/cfg"
 	"github.com/curusarn/resh/internal/datadir"
 	"github.com/curusarn/resh/internal/futil"
+	"github.com/curusarn/resh/internal/histdb"
 	"github.com/curusarn/resh/internal/output"
-	"github.com/curusarn/resh/internal/recio"
 )
 
 func printRecoveryInfo(rf *futil.RestorableFile) {
@@ -88,11 +89,54 @@ func migrateConfig(out *output.Output) (*futil.RestorableFile, error) {
 }
 
 func migrateHistory(out *output.Output) error {
-	err := migrateHistoryLocation(out)
+	dataDir, err := datadir.MakePath()
+	if err != nil {
+		return fmt.Errorf("failed to get data directory: %w", err)
+	}
+	dbPath := path.Join(dataDir, datadir.HistoryDBFileName)
+	db, err := histdb.Open(dbPath)
+	if err != nil {
+		return err
+	}
+	defer db.Close()
+
+	imported, err := db.JSONLImported()
+	if err != nil {
+		return err
+	}
+	if imported {
+		// history is already in the database - nothing to migrate
+		return nil
+	}
+	err = migrateHistoryLocation(out)
 	if err != nil {
 		return fmt.Errorf("failed to move history to new location %w", err)
 	}
-	return migrateHistoryFormat(out)
+	return migrateHistoryToDB(out, db, path.Join(dataDir, datadir.HistoryFileName), dbPath)
+}
+
+// migrateHistoryToDB imports JSON lines history into the history database
+// The JSON history file is left unchanged so it serves as a backup
+func migrateHistoryToDB(out *output.Output, db *histdb.DB, historyPath, dbPath string) error {
+	out.Info(fmt.Sprintf("Moving RESH history to database '%s' ...", dbPath))
+	res, err := db.ImportJSONLFile(out.Logger.Sugar(), historyPath, 3)
+	if errors.Is(err, histdb.ErrAlreadyImported) {
+		return nil
+	}
+	if err != nil {
+		return fmt.Errorf("failed to import history into database: %w", err)
+	}
+	if !res.FileFound {
+		// this is normal during new installation
+		out.Info("No RESH history file found - created empty history database")
+		return nil
+	}
+	if res.Dropped > 0 {
+		out.Info(fmt.Sprintf("Skipped %d history records that could not be read", res.Dropped))
+	}
+	out.Info(fmt.Sprintf("Moved %d history records to database", res.Imported))
+	out.Info(fmt.Sprintf("Original history file '%s' was left unchanged as a backup - you can delete it", historyPath))
+	return nil
 }
 
 // Find first existing history and use it
@@ -140,56 +184,5 @@ func migrateHistoryLocation(out *output.Output) error {
 		}
 	}
 	// out.Info("WARNING: No RESH history file found (this is normal during new installation)")
-	return nil
-}
-
-func migrateHistoryFormat(out *output.Output) error {
-	dataDir, err := datadir.MakePath()
-	if err != nil {
-		return fmt.Errorf("could not get user data directory: %w", err)
-	}
-	historyPath := path.Join(dataDir, datadir.HistoryFileName)
-
-	exists, err := futil.FileExists(historyPath)
-	if err != nil {
-		return fmt.Errorf("failed to check existence of history file: %w", err)
-	}
-	if !exists {
-		out.Error("There is no RESH history file - this is normal if you are installing RESH for the first time on this device")
-		_, err = futil.TouchFile(historyPath)
-		if err != nil {
-			return fmt.Errorf("failed to touch history file: %w", err)
-		}
-		return nil
-	}
-
-	backup, err := futil.BackupFile(historyPath)
-	if err != nil {
-		return fmt.Errorf("could not back up history file: %w", err)
-	}
-
-	rio := recio.New(out.Logger.Sugar())
-
-	recs, err := rio.ReadAndFixFile(historyPath, 3)
-	if err != nil {
-		return fmt.Errorf("could not load history file: %w", err)
-	}
-	err = rio.OverwriteFile(historyPath, recs)
-	if err != nil {
-		// Restore
-		errMigrate := err
-		errMigrateWrap := fmt.Errorf("failed to update format of history file: %w", errMigrate)
-		out.InfoE("Failed to update RESH history file format", errMigrate)
-		out.Info("Restoring RESH history from backup ...")
-		err = backup.Restore()
-		if err != nil {
-			out.InfoE("FAILED TO RESTORE RESH HISTORY FROM BACKUP!", err)
-			printRecoveryInfo(backup)
-		} else {
-			out.Info("RESH history file was restored successfully")
-		}
-		// We are returning the root cause - there might be a better solution how to report the errors
-		return errMigrateWrap
-	}
 	return nil
 }

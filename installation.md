@@ -78,11 +78,14 @@ RESH also adds a following lines to `~/.zshrc` and `~/.bashrc` to load itself on
 
 #### Backup files
 
-During update **config** and **history** files are backed up to:
+During update the **config** file is backed up to:
 
 - `~/.config/resh.toml.backup-<timestamp>`
-- `~/.local/share/resh/history.reshjson.backup-<timestamp>`
-- `$XDG_DATA_HOME/resh/history.reshjson.backup-<timestamp>` (if set)
+
+RESH history is stored in `history.db` (SQLite database).
+When you update from a version which stored history in `history.reshjson`,
+the history is moved to `history.db` and `history.reshjson` is left unchanged as a backup.
+Older versions also created `history.reshjson.backup-<timestamp>` files during update.
 
 Backups allow safe rollbacks during or after installation.
 They are not deleted automatically. You can delete them with:
@@ -90,4 +93,6 @@ They are not deleted automatically. You can delete them with:
 ```shell
 rm ~/.config/resh.toml.backup-*
 rm ${XDG_DATA_HOME-~/.local/share}/resh/history.reshjson.backup-*
+# only once you have checked that your history is in history.db
+rm ${XDG_DATA_HOME-~/.local/share}/resh/history.reshjson
 ```

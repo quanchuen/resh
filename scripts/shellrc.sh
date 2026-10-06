@@ -10,6 +10,12 @@ if [ -n "${ZSH_VERSION-}" ]; then
     __RESH_SHELL="zsh"
 elif [ -n "${BASH_VERSION-}" ]; then
     __RESH_SHELL="bash"
+    # bash-preexec removes ignorespace from HISTCONTROL before the first prompt.
+    # Keep the original value so that commands starting with a space are not recorded.
+    # Only set it once per shell - HISTCONTROL is already modified when shell files are reloaded.
+    if [ -z "${__RESH_HISTCONTROL+x}" ]; then
+        __RESH_HISTCONTROL="${HISTCONTROL-}"
+    fi
 else
     echo "RESH PANIC: unrecognized shell - please report this to https://github.com/curusarn/resh/issues"
 fi

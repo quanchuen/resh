@@ -20,9 +20,10 @@ type Server struct {
 	sugar  *zap.SugaredLogger
 	config cfg.Config
 
-	reshHistoryPath string
-	bashHistoryPath string
-	zshHistoryPath  string
+	reshHistoryPath   string
+	reshHistoryDBPath string
+	bashHistoryPath   string
+	zshHistoryPath    string
 
 	deviceID   string
 	deviceName string
@@ -43,11 +44,13 @@ func (s *Server) Run() {
 	sessionDropSubscribers = append(sessionDropSubscribers, histfileSessionsToDrop)
 	histfileSignals := make(chan os.Signal)
 	signalSubscribers = append(signalSubscribers, histfileSignals)
-	maxHistSize := 10000  // lines
-	minHistSizeKB := 2000 // roughly lines
+	maxHistSize := 10000 // records
+	// below this many records native shell histories get loaded as well
+	// (previously 2000 KB of JSON history which is roughly 5000 records)
+	minHistSize := 5000 // records
 	histfileBox := histfile.New(s.sugar, histfileRecords, histfileSessionsToDrop,
-		s.reshHistoryPath, s.bashHistoryPath, s.zshHistoryPath,
-		maxHistSize, minHistSizeKB,
+		s.reshHistoryDBPath, s.reshHistoryPath, s.bashHistoryPath, s.zshHistoryPath,
+		maxHistSize, minHistSize,
 		histfileSignals, shutdown)
 
 	// sesswatch

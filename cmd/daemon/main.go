@@ -78,6 +78,7 @@ func main() {
 	// TODO: These paths should be probably defined in a package
 	pidFile := filepath.Join(dataDir, "daemon.pid")
 	reshHistoryPath := filepath.Join(dataDir, datadir.HistoryFileName)
+	reshHistoryDBPath := filepath.Join(dataDir, datadir.HistoryDBFileName)
 	bashHistoryPath := filepath.Join(homeDir, ".bash_history")
 	zshHistoryPath := filepath.Join(homeDir, ".zsh_history")
 	deviceID, err := device.GetID(dataDir)
@@ -120,11 +121,12 @@ func main() {
 		)
 	}
 	server := Server{
-		sugar:           sugar,
-		config:          config,
-		reshHistoryPath: reshHistoryPath,
-		bashHistoryPath: bashHistoryPath,
-		zshHistoryPath:  zshHistoryPath,
+		sugar:             sugar,
+		config:            config,
+		reshHistoryPath:   reshHistoryPath,
+		reshHistoryDBPath: reshHistoryDBPath,
+		bashHistoryPath:   bashHistoryPath,
+		zshHistoryPath:    zshHistoryPath,
 
 		deviceID:   deviceID,
 		deviceName: deviceName,
