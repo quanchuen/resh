@@ -25,9 +25,50 @@ __resh_reload_msg() {
     printf '\n'
 }
 
+# Succeeds if the command line should not be recorded because the user configured
+# the shell to keep commands starting with a space out of history:
+#   bash: HISTCONTROL=ignorespace or HISTCONTROL=ignoreboth
+#   zsh:  setopt HIST_IGNORE_SPACE
+__resh_ignore_cmdline() {
+    case "$1" in
+        " "*) ;;
+        *) return 1 ;;
+    esac
+    if [ -n "${ZSH_VERSION-}" ]; then
+        # shellcheck disable=SC3010 # zsh only - [ -o ] does not check options in zsh
+        [[ -o histignorespace ]]
+        return $?
+    fi
+    # bash-preexec removes ignorespace from HISTCONTROL - __RESH_HISTCONTROL keeps the original value
+    case ":${__RESH_HISTCONTROL-}:${HISTCONTROL-}:" in
+        *:ignorespace:*|*:ignoreboth:*) return 0 ;;
+    esac
+    return 1
+}
+
+# Delete the last command from bash history
+# bash-preexec removes ignorespace from HISTCONTROL so that it can read commands starting with a space from history.
+# This restores the ignorespace behavior for bash history.
+__resh_bash_history_delete_last() {
+    local hist_line
+    hist_line=$(LC_ALL=C HISTTIMEFORMAT='' builtin history 1)
+    # strip leading spaces and keep the history number
+    hist_line="${hist_line#"${hist_line%%[! ]*}"}"
+    hist_line="${hist_line%%[!0-9]*}"
+    [ -n "$hist_line" ] && builtin history -d "$hist_line"
+}
+
 # (pre)collect
 # Backwards compatibilty: Please see notes above before making any changes here.
 __resh_preexec() {
+    if __resh_ignore_cmdline "$1"; then
+        if [ -n "${BASH_VERSION-}" ]; then
+            __resh_bash_history_delete_last
+        fi
+        # Make sure __resh_precmd doesn't record anything for this command
+        unset __RESH_COLLECT
+        return 0
+    fi
     if [ "$(resh-collect -version)" != "$__RESH_VERSION" ] && [ -z "${__RESH_NO_RELOAD-}" ]; then
         # Reload shell files and restart __resh_preexec - i.e. the full command will be recorded only with a slight delay.
         # This should happens in every already open terminal after resh update.
