@@ -3,19 +3,19 @@
 set -euo pipefail
 
 echo
-echo "Please report any issues you encounter to: https://github.com/curusarn/resh/issues"
+echo "Please report any issues you encounter to: https://github.com/quanchuen/resh/issues"
 echo
 
 if [ "${1-}" = "--beta" ] || [ "${1-}" = "-b" ]; then
     echo "Looking for the latest release or PRERELEASE (because you used --beta flag) ..."
     # debug
     # latest release OR pre-release
-    json=$(curl --silent "https://api.github.com/repos/curusarn/resh/releases")
+    json=$(curl --silent "https://api.github.com/repos/quanchuen/resh/releases")
     tag=$(echo "$json" | grep '"tag_name":' | cut -d':' -f2 | tr -d ',' | cut -d'"' -f2 | head -n 1)
 else
     echo "Looking for the latest release ..."
     # latest release
-    json=$(curl --silent "https://api.github.com/repos/curusarn/resh/releases/latest")
+    json=$(curl --silent "https://api.github.com/repos/quanchuen/resh/releases/latest")
     # not very robust but we don't want any dependencies to parse to JSON
     tag=$(echo "$json" | grep '"tag_name":' | cut -d':' -f2 | tr -d ',' | cut -d'"' -f2)
 fi
@@ -85,7 +85,7 @@ if [ "$OS" = unknown ] || [ "$ARCH" = unknown ]; then
     exit 1
 fi
 
-dl_base="https://github.com/curusarn/resh/releases/download/${tag}"
+dl_base="https://github.com/quanchuen/resh/releases/download/${tag}"
 
 fname_checksums="resh_${version}_checksums.txt"
 dl_checksums="$dl_base/$fname_checksums"
@@ -144,7 +144,7 @@ if ! scripts/install.sh; then
         printf '└────────────────────────────┘\n'
         printf '\e[0m' # reset
         echo
-        echo "Please create an issue: https://github.com/curusarn/resh/issues"
+        echo "Please create an issue: https://github.com/quanchuen/resh/issues"
     fi
     echo
     echo "Rerun the installation and skip downloading by running:"

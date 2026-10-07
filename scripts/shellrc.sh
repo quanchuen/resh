@@ -17,7 +17,7 @@ elif [ -n "${BASH_VERSION-}" ]; then
         __RESH_HISTCONTROL="${HISTCONTROL-}"
     fi
 else
-    echo "RESH PANIC: unrecognized shell - please report this to https://github.com/curusarn/resh/issues"
+    echo "RESH PANIC: unrecognized shell - please report this to https://github.com/quanchuen/resh/issues"
 fi
 
 # shellcheck disable=2155

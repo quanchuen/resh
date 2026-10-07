@@ -1,148 +1,120 @@
 # .goreleaser.yml
+version: 2
+
 project_name: resh
 
-# resh_template: '{{ ProjectName }}_{{ .Version }}'
-# env:
-#   - GO111MODULE=on
-# before:
-#   hooks:
-#     - go mod tidy
-
+# Binaries are placed in bin/ inside the archive - scripts/install.sh expects them there
+# The first build defines settings shared by all builds
 builds:
-  # You can have multiple builds defined as a yaml list
-    # ID of the build.
-    # Defaults to the project name.
-    # id: "daemon"
-
-    # Path to main.go file or main package.
-    # Default is `.`.
-    # id: ./cmd/daemon 
-
-    # Binary name.
-    # Can be a path (e.g. `bin/app`) to wrap the binary in a directory.
-    # Default is the name of the project directory.
-    # binary: resh-collect
-
-    # Hooks can be used to customize the final binary,
-    # for example, to run generators.
-    # Those fields allow templates.
-    # Default is both hooks empty.
-    # hooks:
-    #   pre: rice embed-go
-    #   post: ./script.sh
-  -
+  - &build-defaults
     id: "cli"
     main: ./cmd/cli
     binary: bin/resh-cli
-    goarch: 
+    env:
+      - CGO_ENABLED=0
+    goos:
+      - linux
+      - darwin
+    goarch:
       - 386
       - amd64
       - arm
       - arm64
-  -
+    goarm:
+      - "6"
+    ignore:
+      - goos: darwin
+        goarch: 386
+      - goos: darwin
+        goarch: arm
+  - <<: *build-defaults
     id: "collect"
     main: ./cmd/collect
     binary: bin/resh-collect
-    goarch: 
-      - 386
-      - amd64
-      - arm
-      - arm64
-  -
+  - <<: *build-defaults
     id: "config"
     main: ./cmd/config
     binary: bin/resh-config
-    goarch: 
-      - 386
-      - amd64
-      - arm
-      - arm64
-  -
+  - <<: *build-defaults
     id: "control"
     main: ./cmd/control
     binary: bin/resh-control
-    goarch: 
-      - 386
-      - amd64
-      - arm
-      - arm64
-  -
+  - <<: *build-defaults
     id: "daemon"
     main: ./cmd/daemon
     binary: bin/resh-daemon
-    goarch: 
-      - 386
-      - amd64
-      - arm
-      - arm64
-  -
+  - <<: *build-defaults
     id: "postcollect"
     main: ./cmd/postcollect
     binary: bin/resh-postcollect
-    goarch: 
-      - 386
-      - amd64
-      - arm
-      - arm64
-  -
+  - <<: *build-defaults
     id: "session-init"
     main: ./cmd/session-init
     binary: bin/resh-session-init
-    goarch: 
-      - 386
-      - amd64
-      - arm
-      - arm64
-  -
+  - <<: *build-defaults
     id: "install-utils"
     main: ./cmd/install-utils
     binary: bin/resh-install-utils
-    goarch:
-      - 386
-      - amd64
-      - arm
-      - arm64
-  -
+  - <<: *build-defaults
     id: "generate-uuid"
     main: ./cmd/generate-uuid
     binary: bin/resh-generate-uuid
-    goarch:
-      - 386
-      - amd64
-      - arm
-      - arm64
-  -
+  - <<: *build-defaults
     id: "get-epochtime"
     main: ./cmd/get-epochtime
     binary: bin/resh-get-epochtime
-    goarch:
-      - 386
-      - amd64
-      - arm
-      - arm64
-
-# signs:
-#   - artifacts: checksum
 
 # include everything in the package
 # looks like xmas
+# scripts/rawinstall.sh depends on the archive and checksum file names
 archives:
-- files:
-  - ./Makefile
-  - conf/*
-  - conf/**/*
-  - data/*
-  - data/**/*
-  - scripts/*
-  - scripts/**/*
-  - submodules/**/*
+  - name_template: "{{ .ProjectName }}_{{ .Version }}_{{ .Os }}_{{ .Arch }}{{ with .Arm }}v{{ . }}{{ end }}"
+    files:
+      - LICENSE
+      - README.md
+      - ./Makefile
+      - scripts/*
+      - submodules/**/*
+
+checksum:
+  name_template: "{{ .ProjectName }}_{{ .Version }}_checksums.txt"
+
+# Homebrew can't write to the home directory so the formula only installs the package
+# and the user finishes the installation by running resh-setup (scripts/install.sh)
+brews:
+  - name: resh
+    repository:
+      owner: quanchuen
+      name: homebrew-tap
+      token: "{{ .Env.HOMEBREW_TAP_TOKEN }}"
+    directory: Formula
+    homepage: "https://github.com/quanchuen/resh"
+    description: "Context-based replacement for zsh and bash shell history"
+    license: "MIT"
+    commit_author:
+      name: goreleaserbot
+      email: bot@goreleaser.com
+    install: |
+      libexec.install Dir["*"]
+      (bin/"resh-setup").write <<~EOS
+        #!/bin/bash
+        cd "#{libexec}" && exec scripts/install.sh "$@"
+      EOS
+      chmod 0755, bin/"resh-setup"
+    caveats: |
+      To finish the installation run:
+        resh-setup
+
+      This installs RESH into ~/.resh and adds it to your ~/.zshrc and ~/.bashrc.
+      Run resh-setup again after every `brew upgrade resh`.
+      Use `brew upgrade resh` instead of `reshctl update`.
+
+      To uninstall run `brew uninstall resh && rm -rf ~/.resh`
+      and remove the RESH lines from ~/.zshrc and ~/.bashrc.
+    test: |
+      system libexec/"bin/resh-control", "--help"
 
 release:
-  # draft: true
-
   # If set to auto, will mark the release as not ready for production
   # in case there is an indicator for this in the tag e.g. v1.0.0-rc1
-  # If set to true, will mark the release as not ready for production.
-  # Default is false.
   prerelease: auto
-  # disable: true

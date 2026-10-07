@@ -1,8 +1,8 @@
 
-[![Latest version](https://img.shields.io/github/v/tag/curusarn/resh?sort=semver)](https://github.com/curusarn/resh/releases)
-[![Go Report Card](https://goreportcard.com/badge/github.com/curusarn/resh)](https://goreportcard.com/report/github.com/curusarn/resh)
-[![Go test](https://github.com/curusarn/resh/actions/workflows/go.yaml/badge.svg)](https://github.com/curusarn/resh/actions/workflows/go.yaml)
-[![Shell test](https://github.com/curusarn/resh/actions/workflows/sh.yaml/badge.svg)](https://github.com/curusarn/resh/actions/workflows/sh.yaml)
+[![Latest version](https://img.shields.io/github/v/tag/quanchuen/resh?sort=semver)](https://github.com/quanchuen/resh/releases)
+[![Go Report Card](https://goreportcard.com/badge/github.com/quanchuen/resh)](https://goreportcard.com/report/github.com/quanchuen/resh)
+[![Go test](https://github.com/quanchuen/resh/actions/workflows/go.yaml/badge.svg)](https://github.com/quanchuen/resh/actions/workflows/go.yaml)
+[![Shell test](https://github.com/quanchuen/resh/actions/workflows/sh.yaml/badge.svg)](https://github.com/quanchuen/resh/actions/workflows/sh.yaml)
 
 # RESH
 
@@ -27,10 +27,17 @@ Relevant results are displayed first based on current directory, git repo, and e
 Install RESH with one command:
 
 ```sh
-curl -fsSL https://raw.githubusercontent.com/curusarn/resh/master/scripts/rawinstall.sh | bash
+curl -fsSL https://raw.githubusercontent.com/quanchuen/resh/master/scripts/rawinstall.sh | bash
 ```
 
 ℹ️ You will need to have `bash`, `curl`, and `tar` installed.
+
+Or with Homebrew:
+
+```sh
+brew install quanchuen/tap/resh
+resh-setup
+```
 
 More options on [Installation page ⇗](./installation.md)
 
@@ -54,4 +61,4 @@ Press <kbd>Ctrl</kbd> + <kbd>R</kbd> to search:
 
 Find help on [Troubleshooting page ⇗](./troubleshooting.md)
 
-Problem persists? [Create an issue ⇗](https://github.com/curusarn/resh/issues)
+Problem persists? [Create an issue ⇗](https://github.com/quanchuen/resh/issues)

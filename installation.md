@@ -5,15 +5,26 @@
 Feel free to check the `rawinstall.sh` script before running it.
 
 ```sh
-curl -fsSL https://raw.githubusercontent.com/curusarn/resh/master/scripts/rawinstall.sh | bash
+curl -fsSL https://raw.githubusercontent.com/quanchuen/resh/master/scripts/rawinstall.sh | bash
 ```
 
 ℹ️ You will need to have `bash`, `curl`, and `tar` installed.
 
+## Homebrew
+
+```sh
+brew install quanchuen/tap/resh
+resh-setup
+```
+
+`resh-setup` installs RESH into `~/.resh/` and adds it to your shell config.
+Run it again after every `brew upgrade resh`.
+When installed with Homebrew, update with `brew upgrade resh && resh-setup` instead of `reshctl update`.
+
 ## Clone & install
 
 ```sh
-git clone https://github.com/curusarn/resh.git
+git clone https://github.com/quanchuen/resh.git
 cd resh
 scripts/rawinstall.sh
 ```
@@ -23,7 +34,7 @@ scripts/rawinstall.sh
 :warning: Building from source is intended for development and troubleshooting.
 
 ```sh
-git clone https://github.com/curusarn/resh.git
+git clone https://github.com/quanchuen/resh.git
 cd resh
 make install
 ```
@@ -34,6 +45,8 @@ Once installed RESH can be updated using:
 ```sh
 reshctl update
 ```
+
+If you installed RESH with Homebrew use `brew upgrade resh && resh-setup` instead.
 
 ## Disabling RESH
 

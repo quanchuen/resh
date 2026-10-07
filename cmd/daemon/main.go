@@ -44,7 +44,7 @@ LOGS & DEBUGGING:
     $ tail -f ~/.local/share/resh/log.json
 
 MORE INFO:
-  https://github.com/curusarn/resh/
+  https://github.com/quanchuen/resh/
 `
 
 func main() {

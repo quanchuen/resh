@@ -63,7 +63,7 @@ var msgDaemonNotRunning = `RESH daemon didn't respond - it's probably not runnin
  -> Start RESH daemon manually - run: resh-daemon-start
  -> Or restart this terminal window to bring RESH daemon back up
  -> You can check logs: ~/.local/share/resh/log.json (or ~/$XDG_DATA_HOME/resh/log.json)
- -> You can create an issue at: https://github.com/curusarn/resh/issues
+ -> You can create an issue at: https://github.com/quanchuen/resh/issues
 
 `
 var msgTerminalVersionMismatch = `This terminal session was started with different RESH version than is installed now.
@@ -75,7 +75,7 @@ It looks like you updated RESH and didn't restart this terminal.
 var msgDaemonVersionMismatch = `RESH daemon is running in different version than is installed now.
 It looks like something went wrong during RESH update.
  -> Kill resh-daemon and then launch a new terminal window to fix that: killall resh-daemon
- -> You can create an issue at: https://github.com/curusarn/resh/issues
+ -> You can create an issue at: https://github.com/quanchuen/resh/issues
 
 `
 
