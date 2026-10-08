@@ -40,6 +40,10 @@ jobs:
           submodules: recursive
           persist-credentials: false
 
+      # The container runs as root but the checkout is owned by the runner user
+      - name: Trust the checkout
+        run: git config --global --add safe.directory "$GITHUB_WORKSPACE"
+
       - name: Set up Go
         uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
         with:
