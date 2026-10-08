@@ -10,6 +10,7 @@ import (
 	"errors"
 	"fmt"
 	"sync"
+	"time"
 
 	"github.com/curusarn/resh/internal/futil"
 	"github.com/curusarn/resh/internal/recio"
@@ -18,10 +19,14 @@ import (
 	"go.uber.org/zap"
 
 	// pure Go SQLite driver - keeps the build CGO-free
-	_ "modernc.org/sqlite"
+	"modernc.org/sqlite"
+	sqlite3 "modernc.org/sqlite/lib"
 )
 
 const schemaVersion = 1
+
+// busyTimeout is how long to wait for other processes holding the database lock
+const busyTimeout = 5 * time.Second
 
 const schema = `
 CREATE TABLE IF NOT EXISTS meta (
@@ -96,7 +101,7 @@ func Open(path string) (*DB, error) {
 	dsn := "file:" + path +
 		"?_pragma=journal_mode(WAL)" +
 		"&_pragma=synchronous(NORMAL)" +
-		"&_pragma=busy_timeout(5000)" +
+		fmt.Sprintf("&_pragma=busy_timeout(%d)", busyTimeout.Milliseconds()) +
 		// take the write lock when a transaction begins so that concurrent processes
 		// (daemon, install-utils) wait for each other instead of failing on lock upgrade
 		"&_txlock=immediate"
@@ -112,12 +117,28 @@ func Open(path string) (*DB, error) {
 		strIDs:  map[string]int64{},
 		sessIDs: map[sessionKey]int64{},
 	}
-	err = h.migrate()
+	// When processes open a new database at the same time, SQLite fails the switch to WAL
+	// with SQLITE_BUSY right away (instead of waiting for busy_timeout) to avoid a deadlock.
+	// Nothing was written at that point so it's safe to retry.
+	deadline := time.Now().Add(busyTimeout)
+	for {
+		err = h.migrate()
+		if err == nil || !isBusy(err) || time.Now().After(deadline) {
+			break
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
 	if err != nil {
 		db.Close()
 		return nil, err
 	}
 	return h, nil
+}
+
+func isBusy(err error) bool {
+	var sqliteErr *sqlite.Error
+	// the primary result code is in the lowest byte of extended result codes
+	return errors.As(err, &sqliteErr) && sqliteErr.Code()&0xff == sqlite3.SQLITE_BUSY
 }
 
 // Close closes the database
