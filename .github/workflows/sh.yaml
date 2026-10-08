@@ -1,19 +1,38 @@
 name: Shell
-on: [push]
+
+on:
+  push:
+    branches: [master]
+  pull_request:
+  workflow_dispatch:
+  workflow_call:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: shell-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
 jobs:
 
   test:
     name: Test
     runs-on: ubuntu-latest
+    timeout-minutes: 10
+    container: debian:trixie-slim
     steps:
 
-      - name: Checkout
-        uses: actions/checkout@v3
-        with:
-          fetch-depth: 0
+      - name: Install dependencies
+        run: apt-get update && apt-get install -y --no-install-recommends shellcheck zsh
 
-      - name: Set up
-        run: sudo apt-get install -y shellcheck zsh
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
 
       - name: Test
         run: scripts/test.sh
+
+      - name: Shellcheck CI scripts
+        run: shellcheck .github/scripts/*.sh
